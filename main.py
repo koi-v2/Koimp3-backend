@@ -19,7 +19,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 MAX_DURATION = int(os.getenv("MAX_DURATION_SECONDS", "1800"))
 JOB_TTL = int(os.getenv("JOB_TTL_SECONDS", "1800"))
 
-app = FastAPI(title=APP_NAME, version="1.0.2")
+app = FastAPI(title=APP_NAME, version="1.0.3")
 
 app.add_middleware(
     CORSMiddleware,
@@ -94,12 +94,15 @@ def convert_worker(job_id: str, url: str, quality: int):
             "restrictfilenames": True,
             "socket_timeout": 30,
             "retries": 3,
-            # SOLUSI BYPASS BOT: Gunakan client android/ios/mweb tanpa client desktop 'web'
+            # MENYAMAR SEBAGAI YOUTUBE IPHONE (IOS) BEBAS BOT CHECK:
             "extractor_args": {
                 "youtube": {
-                    "player_client": ["android", "ios", "mweb"],
+                    "player_client": ["ios", "mweb"],
                     "player_skip": ["webpage", "configs"]
                 }
+            },
+            "http_headers": {
+                "User-Agent": "com.google.ios.youtube/19.45.4 (iPhone16,2; U; CPU iOS 18_1 like Mac OS X; en_US)"
             },
             "postprocessors": [
                 {
@@ -110,13 +113,12 @@ def convert_worker(job_id: str, url: str, quality: int):
             ],
         }
 
-        # Jika ada file cookies.txt di server, otomatis digunakan
+        # Jika sewaktu-waktu ada file cookies.txt, otomatis ikut dipakai
         cookie_path = Path("cookies.txt")
         if cookie_path.exists():
             ydl_opts["cookiefile"] = str(cookie_path)
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Ekstraksi info dan download dalam 1 pass untuk mengurangi bot trigger
             info = ydl.extract_info(url, download=True)
             if not info:
                 raise RuntimeError("Failed to extract video information.")
@@ -150,7 +152,7 @@ def root():
     return {
         "name": APP_NAME,
         "status": "online",
-        "version": "1.0.2"
+        "version": "1.0.3"
     }
 
 
