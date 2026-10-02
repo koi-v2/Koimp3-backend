@@ -16,16 +16,33 @@ import yt_dlp
 
 APP_NAME = "KoiMP3 Backend"
 
-OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", "/tmp/koimp3"))
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR = Path(
+    os.getenv("OUTPUT_DIR", "/tmp/koimp3")
+)
 
-MAX_DURATION = int(os.getenv("MAX_DURATION_SECONDS", "1800"))
-JOB_TTL = int(os.getenv("JOB_TTL_SECONDS", "1800"))
+OUTPUT_DIR.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+MAX_DURATION = int(
+    os.getenv(
+        "MAX_DURATION_SECONDS",
+        "1800"
+    )
+)
+
+JOB_TTL = int(
+    os.getenv(
+        "JOB_TTL_SECONDS",
+        "1800"
+    )
+)
 
 
 app = FastAPI(
     title=APP_NAME,
-    version="1.0.0"
+    version="1.0.1"
 )
 
 
@@ -33,7 +50,11 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=[
+        "GET",
+        "POST",
+        "OPTIONS"
+    ],
     allow_headers=["*"],
 )
 
@@ -42,6 +63,7 @@ jobs = {}
 
 
 class ConvertRequest(BaseModel):
+
     url: str = Field(
         min_length=8,
         max_length=2048
@@ -58,7 +80,10 @@ class ConvertRequest(BaseModel):
     )
 
 
-def valid_http_url(url: str) -> bool:
+def valid_http_url(
+    url: str
+) -> bool:
+
     return bool(
         re.match(
             r"^https?://",
@@ -69,46 +94,69 @@ def valid_http_url(url: str) -> bool:
 
 
 def ffmpeg_available() -> bool:
-    return shutil.which("ffmpeg") is not None
+
+    return shutil.which(
+        "ffmpeg"
+    ) is not None
 
 
 def cleanup_old_jobs():
+
     now = time.time()
 
     expired = []
 
-    for job_id, job in jobs.items():
+    for job_id, job in list(
+        jobs.items()
+    ):
+
         created = job.get(
             "created_at",
             now
         )
 
-        if now - created > JOB_TTL:
-            expired.append(job_id)
+        if (
+            now - created
+            > JOB_TTL
+        ):
+            expired.append(
+                job_id
+            )
 
     for job_id in expired:
+
         job = jobs.pop(
             job_id,
             None
         )
 
-        if job:
-            path = job.get("file")
+        if not job:
+            continue
 
-            if path:
-                try:
-                    Path(path).unlink(
-                        missing_ok=True
-                    )
-                except Exception:
-                    pass
+        path = job.get(
+            "file"
+        )
+
+        if path:
+
+            try:
+                Path(path).unlink(
+                    missing_ok=True
+                )
+            except Exception:
+                pass
 
 
-def find_output(job_id: str) -> Optional[Path]:
+def find_output(
+    job_id: str
+) -> Optional[Path]:
+
     for path in OUTPUT_DIR.glob(
         f"{job_id}.*"
     ):
+
         if path.is_file():
+
             return path
 
     return None
@@ -119,59 +167,85 @@ def convert_worker(
     url: str,
     quality: int
 ):
-    job = jobs[job_id]
+
+    job = jobs.get(
+        job_id
+    )
+
+    if not job:
+        return
 
     job["status"] = "processing"
 
     try:
 
         if not ffmpeg_available():
+
             raise RuntimeError(
                 "FFmpeg is not installed on the server."
             )
 
         template = str(
-            OUTPUT_DIR /
-            f"{job_id}.%(ext)s"
+            OUTPUT_DIR
+            / f"{job_id}.%(ext)s"
         )
 
         ydl_opts = {
-            "format": "bestaudio/best",
 
-            "outtmpl": template,
+            "format":
+                "bestaudio/best",
 
-            "noplaylist": True,
+            "outtmpl":
+                template,
 
-            "quiet": True,
+            "noplaylist":
+                True,
 
-            "no_warnings": True,
+            "quiet":
+                True,
 
-            "restrictfilenames": True,
+            "no_warnings":
+                True,
 
-            "socket_timeout": 30,
+            "restrictfilenames":
+                True,
 
-            "retries": 2,
+            "socket_timeout":
+                30,
+
+            "retries":
+                2,
 
             "extractor_args": {
+
                 "youtube": {
+
                     "player_client": [
                         "android",
                         "web"
                     ]
+
                 }
+
             },
 
             "postprocessors": [
+
                 {
-                    "key": "FFmpegExtractAudio",
 
-                    "preferredcodec": "mp3",
+                    "key":
+                        "FFmpegExtractAudio",
 
-                    "preferredquality": str(
-                        quality
-                    ),
+                    "preferredcodec":
+                        "mp3",
+
+                    "preferredquality":
+                        str(quality)
+
                 }
-            ],
+
+            ]
+
         }
 
         with yt_dlp.YoutubeDL(
@@ -191,8 +265,10 @@ def convert_worker(
                 duration
                 and duration > MAX_DURATION
             ):
+
                 raise RuntimeError(
-                    "Media is longer than the allowed "
+                    "Media is longer than "
+                    f"the allowed "
                     f"{MAX_DURATION} seconds."
                 )
 
@@ -214,8 +290,10 @@ def convert_worker(
         )
 
         if not output:
+
             raise RuntimeError(
-                "Conversion finished but MP3 output was not found."
+                "Conversion finished but "
+                "MP3 output was not found."
             )
 
         job["file"] = str(
@@ -226,7 +304,9 @@ def convert_worker(
             f"{job_id}.mp3"
         )
 
-        job["status"] = "completed"
+        job["status"] = (
+            "completed"
+        )
 
         job["downloadUrl"] = (
             f"/api/download/{job_id}"
@@ -245,9 +325,16 @@ def convert_worker(
 def root():
 
     return {
-        "name": APP_NAME,
-        "status": "online",
-        "version": "1.0.0"
+
+        "name":
+            APP_NAME,
+
+        "status":
+            "online",
+
+        "version":
+            "1.0.1"
+
     }
 
 
@@ -255,9 +342,16 @@ def root():
 def health():
 
     return {
-        "ok": True,
-        "ffmpeg": ffmpeg_available(),
-        "jobs": len(jobs)
+
+        "ok":
+            True,
+
+        "ffmpeg":
+            ffmpeg_available(),
+
+        "jobs":
+            len(jobs)
+
     }
 
 
@@ -268,16 +362,24 @@ async def convert(
 
     cleanup_old_jobs()
 
-    if request.format.lower() != "mp3":
+    if (
+        request.format.lower()
+        != "mp3"
+    ):
 
         raise HTTPException(
             status_code=400,
-            detail="Only MP3 format is supported."
+            detail=(
+                "Only MP3 format "
+                "is supported."
+            )
         )
 
     url = request.url.strip()
 
-    if not valid_http_url(url):
+    if not valid_http_url(
+        url
+    ):
 
         raise HTTPException(
             status_code=400,
@@ -288,23 +390,33 @@ async def convert(
 
     jobs[job_id] = {
 
-        "id": job_id,
+        "id":
+            job_id,
 
-        "status": "queued",
+        "status":
+            "queued",
 
-        "created_at": time.time(),
+        "created_at":
+            time.time(),
 
-        "title": None,
+        "title":
+            None,
 
-        "duration": None,
+        "duration":
+            None,
 
-        "file": None,
+        "file":
+            None,
 
-        "filename": None,
+        "filename":
+            None,
 
-        "downloadUrl": None,
+        "downloadUrl":
+            None,
 
-        "error": None
+        "error":
+            None
+
     }
 
     asyncio.create_task(
@@ -318,12 +430,15 @@ async def convert(
 
     return {
 
-        "jobId": job_id,
+        "jobId":
+            job_id,
 
-        "status": "queued",
+        "status":
+            "queued",
 
         "downloadUrl":
             f"/api/download/{job_id}"
+
     }
 
 
@@ -349,10 +464,90 @@ def get_job(
 
     return {
 
-        "jobId": job["id"],
+        "jobId":
+            job["id"],
 
-        "status": job["status"],
+        "status":
+            job["status"],
 
-        "title": job["title"],
+        "title":
+            job["title"],
 
-        "duration": job["duration
+        "duration":
+            job["duration"],
+
+        "downloadUrl":
+            job["downloadUrl"],
+
+        "filename":
+            job["filename"],
+
+        "error":
+            job["error"]
+
+    }
+
+
+@app.get(
+    "/api/download/{job_id}"
+)
+def download(
+    job_id: str
+):
+
+    cleanup_old_jobs()
+
+    job = jobs.get(
+        job_id
+    )
+
+    if not job:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Job not found."
+        )
+
+    if (
+        job["status"]
+        != "completed"
+    ):
+
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Job is not ready. "
+                f"Current status: "
+                f"{job['status']}"
+            )
+        )
+
+    path = Path(
+        job["file"]
+    )
+
+    if not path.exists():
+
+        job["status"] = "failed"
+
+        job["error"] = (
+            "Output file no longer exists."
+        )
+
+        raise HTTPException(
+            status_code=410,
+            detail="Output file expired."
+        )
+
+    return FileResponse(
+
+        path=str(path),
+
+        media_type="audio/mpeg",
+
+        filename=(
+            job["filename"]
+            or f"{job_id}.mp3"
+        )
+
+    )
